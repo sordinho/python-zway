@@ -24,80 +24,49 @@ import rest
 import time
 
 
-if __name__ == '__main__':
+def isUserAtHome():
+	# the base url
+	base_url = 'http://192.168.0.202:8083'
 
-    # the base url
-    base_url = 'http://192.168.0.202:8083'
+	# login credentials
+	username = 'admin'
+	password = 'ami-zwave'
 
-    # login credentials, to be replaced with the right ones
-    # N.B. authentication may be disabled from the configuration of the 'Z-Wave Network Access' app
-    # from the website available at 'base_url'
-    username = 'admin'
-    password = 'admin'
+	# get z-wave devices
+	all_devices = rest.send(url=base_url + '/ZWaveAPI/Data/0', auth=(username, password))
 
-    # get z-wave devices
-    all_devices = rest.send(url=base_url + '/ZWaveAPI/Data/0', auth=(username, password))
-    # without auth, omit the last parameter
-    # all_devices = rest.send(url=base_url + '/ZWaveAPI/Data/0')
+	# clean up all_devices dictionary
+	all_devices = all_devices['devices']
+	# remove the Z-Way controller from the device list
+	all_devices.pop('1')
 
-    # clean up all_devices
-    all_devices = all_devices['devices']
-    # remove the Z-Way controller from the device list
-    all_devices.pop('1')
+	# "prototype" and base URL for getting/setting device properties
+	device_url = base_url + '/ZWaveAPI/Run/devices[{}].instances[{}].commandClasses[{}]'
 
-    # "prototype" and base URL for getting/setting device properties
-    device_url = base_url + '/ZWaveAPI/Run/devices[{}].instances[{}].commandClasses[{}]'
+	# every device has an ID ==> dobbiamo trovare id del sensore di movimento dal sito
+	# ogni sensore può avere diverse instances, ad esempio il 4 in 1 ne avra 4, sono le diverse cose che può fare
+	# ogni istance ha una command class, che specifica le feature del device:
 
-    # some useful command classes
-    switch_binary = '37'
-    sensor_binary = '48'
-    sensor_multi = '49'
+	# sensore di movimento
+	motion_sensor_id = None  # id del nostro sensore
+	sensor_binary = '48'  # (command class) per il movimento
 
-    # search for devices to be "operated", in this case power outlets, temperature, and motion sensors
-    for device_key in all_devices:
-        # iterate over device instances
-        for instance in all_devices[device_key]['instances']:
-            # search for the SwitchBinary (37) command class, i.e., power outlets
-            if switch_binary in all_devices[device_key]['instances'][instance]['commandClasses']:
-                print('Turning on device %s...' % device_key)
-                # turn it on (255)
-                url_to_call = (device_url + '.Set(255)').format(device_key, instance, switch_binary)
-                rest.send(url=url_to_call, auth=(username, password))
-            # search for the SensorMultilevel (49) command class, e.g., for temperature
-            if sensor_multi in all_devices[device_key]['instances'][instance]['commandClasses']:
-                # debug
-                print('Device %s is a sensor multilevel' % device_key)
-                # get data from the multilevel class
-                url_to_call = device_url.format(device_key, instance, sensor_multi)
-                # info from devices is in the response
-                response = rest.send(url=url_to_call, auth=(username, password))
-                # 1: temperature, 3: luminosity, 5: humidity (numbers must be used as strings)
-                val = response['data']['1']['val']['value']
-                unit_of_measure = response['data']['1']['scaleString']['value']
-                print('The temperature is ' + str(val) + unit_of_measure)
-            # search for the SensorBinary (48) command class, e.g., for motion
-            if sensor_binary in all_devices[device_key]['instances'][instance]['commandClasses']:
-                # debug
-                print('Device %s is a sensor binary' % device_key)
-                # get motion
-                url_to_call = device_url.format(device_key, instance, sensor_binary)
-                # info from devices is in the response
-                response = rest.send(url=url_to_call, auth=(username, password))
-                val = response['data']['1']['level']['value']
-                print('Motion: ' + str(val))
+	# search for devices to be "operated", in this case power outlets, temperature, and motion sensors
+	for device_key in all_devices:
+		# iterate over device instances
+		for instance in all_devices[device_key]['instances']:
+			# search for the SensorBinary (48) command class, e.g., for motion
+			if sensor_binary in all_devices[device_key]['instances'][instance]['commandClasses']:
+				# debug
+				print('Device %s is a sensor binary' % device_key)
+				# get motion
+				url_to_call = device_url.format(device_key, instance, sensor_binary)
+				# info from devices is in the response
+				response = rest.send(url=url_to_call, auth=(username, password))
+				val = response['data']['1']['level']['value']
+				print('Motion: ' + str(val))
+				return val
 
-    # reverse count to off
-    for i in range(0, 10):
-        time.sleep(1)
-        print(10 - i)
-
-    # search for power outlets, again
-    for device_key in all_devices:
-        # iterate over device instances
-        for instance in all_devices[device_key]['instances']:
-            # search for the SwitchBinary (37) command class, i.e., power outlets
-            if switch_binary in all_devices[device_key]['instances'][instance]['commandClasses'].keys():
-                print('Turning off device %s...' % device_key)
-                # turn it off (0)
-                url_to_call = (device_url + '.Set(0)').format(device_key, instance, switch_binary)
-                rest.send(url=url_to_call, auth=(username, password))
+# per includere un dispositivo premere 3 volte veloce il tasto.
+# se non posso includere, provare prima a escludere
+# se ci sono 10 sensori di movimento collegati dobbiamo riconoscere il nostro => cerchiamo id del nostro sensore e facciamo check solo di quello
